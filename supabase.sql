@@ -1,0 +1,82 @@
+-- Run this script in Supabase Dashboard > SQL Editor.
+create extension if not exists pgcrypto;
+
+create table if not exists public.site_content (
+  id integer primary key default 1 check (id = 1),
+  content jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.rsvps (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  contact text,
+  attending boolean not null,
+  guest_count integer not null default 1 check (guest_count between 1 and 10),
+  message text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+
+alter table public.site_content enable row level security;
+alter table public.rsvps enable row level security;
+alter table public.admin_users enable row level security;
+
+-- An administrator can only see their own allowlist record.
+create policy "Admins can read own admin record" on public.admin_users
+for select to authenticated using (user_id = auth.uid());
+
+-- Public visitors can read the published invitation content.
+create policy "Public can read site content" on public.site_content
+for select using (true);
+
+-- Only explicitly allowlisted admin accounts can change website content.
+create policy "Admins can insert site content" on public.site_content
+for insert to authenticated with check (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+);
+create policy "Admins can update site content" on public.site_content
+for update to authenticated using (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+) with check (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+);
+
+-- Public guests can submit RSVP. Do not enable public read access to RSVP rows.
+create policy "Public can submit RSVP" on public.rsvps
+for insert to anon, authenticated with check (
+  length(trim(full_name)) > 0 and guest_count between 1 and 10
+);
+
+-- Only allowlisted admins can read, update, and delete RSVP rows.
+create policy "Admins can read RSVPs" on public.rsvps
+for select to authenticated using (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+);
+create policy "Admins can update RSVPs" on public.rsvps
+for update to authenticated using (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+) with check (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+);
+create policy "Admins can delete RSVPs" on public.rsvps
+for delete to authenticated using (
+  exists (select 1 from public.admin_users where user_id = auth.uid())
+);
+
+-- Storage bucket for gallery photos. Public read, authenticated upload/delete.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('wedding-photos', 'wedding-photos', true, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do nothing;
+
+create policy "Public can view wedding photos" on storage.objects
+for select using (bucket_id = 'wedding-photos');
+create policy "Admins can upload wedding photos" on storage.objects
+for insert to authenticated with check (bucket_id = 'wedding-photos' and exists (select 1 from public.admin_users where user_id = auth.uid()));
+create policy "Admins can update wedding photos" on storage.objects
+for update to authenticated using (bucket_id = 'wedding-photos' and exists (select 1 from public.admin_users where user_id = auth.uid())) with check (bucket_id = 'wedding-photos' and exists (select 1 from public.admin_users where user_id = auth.uid()));
+create policy "Admins can delete wedding photos" on storage.objects
+for delete to authenticated using (bucket_id = 'wedding-photos' and exists (select 1 from public.admin_users where user_id = auth.uid()));
