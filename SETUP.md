@@ -105,3 +105,14 @@ The Google Maps buttons automatically search the addresses you enter.
 - Background music only works with a direct audio file URL that you have permission to use. Browsers may require visitors to press play.
 - This starter includes the functional core and an admin content editor. It does not yet include drag-and-drop page layout editing or a guest-specific invitation list.
 - Netlify's free plan and Supabase's free plan have usage limits and can change. Check their current pricing pages before launch.
+
+## Upgrade note: templates and guestbook
+
+This upgraded version adds three switchable invitation designs (Botanical Romance, Classic Elegance, and Modern Editorial), an updating design preview in the admin editor, an editable wedding-day note, and a guestbook with administrator approval.
+
+- If this is a **new Supabase setup**, run the updated `supabase.sql` once.
+- If you **already ran the previous `supabase.sql`**, run `supabase-guestbook-migration.sql` once in Supabase SQL Editor. Do not rerun the original schema script just to add the guestbook.
+- Existing invitation content and RSVP records are retained. The new template and schedule fields use safe defaults when loading older saved content.
+- Guestbook entries submitted to Supabase remain hidden until an allowlisted administrator approves them in `/admin`.
+
+The admin preview is a live design/content preview of the invitation cover. It is not a full drag-and-drop page builder; this is a lightweight, free-hosting-friendly editor.

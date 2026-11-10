@@ -19,12 +19,19 @@ function App() {
   const [login, setLogin] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [rsvps, setRsvps] = useState<any[]>([]);
+  const [wishes, setWishes] = useState<any[]>([]);
+  const [wishName, setWishName] = useState("");
+  const [wishMessage, setWishMessage] = useState("");
+  const [wishSent, setWishSent] = useState(false);
+  const [wishError, setWishError] = useState("");
   const [saved, setSaved] = useState(false);
   const [tick, setTick] = useState(Date.now());
   const [musicOn, setMusicOn] = useState(false);
 
   useEffect(() => {
     loadContent().then(setContent).finally(() => setLoaded(true));
+    if (supabase) { supabase.from("wishes").select("*").eq("approved", true).order("created_at", { ascending: false }).then(({ data }) => setWishes(data || [])); }
+    else { try { setWishes(JSON.parse(localStorage.getItem("rk-demo-wishes") || "[]")); } catch { setWishes([]); } }
     if (supabase) {
       supabase.auth.getSession().then(({ data }) => setSession(data.session));
       const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => setSession(current));
@@ -46,6 +53,7 @@ function App() {
   useEffect(() => {
     if (admin && session && supabase) {
       supabase.from("rsvps").select("*").order("created_at", { ascending: false }).then(({ data }) => setRsvps(data || []));
+      supabase.from("wishes").select("*").order("created_at", { ascending: false }).then(({ data }) => setWishes(data || []));
     }
   }, [admin, session]);
 
@@ -59,7 +67,7 @@ function App() {
     };
   }, [tick]);
 
-  const update = (key: keyof WeddingContent, value: string | string[]) => setContent(current => ({ ...current, [key]: value }));
+  const update = <K extends keyof WeddingContent>(key: K, value: WeddingContent[K]) => setContent(current => ({ ...current, [key]: value }));
 
   function navigateAdmin() {
     window.history.pushState({}, "", "/admin");
@@ -91,6 +99,27 @@ function App() {
       localStorage.setItem("rk-demo-rsvps", JSON.stringify(current));
     }
     setRsvpSent(true);
+  }
+
+  async function submitWish(e: React.FormEvent) {
+    e.preventDefault(); setWishError("");
+    if (!wishName.trim() || !wishMessage.trim()) { setWishError("Please add your name and a message."); return; }
+    if (supabase) {
+      const { error } = await supabase.from("wishes").insert({ guest_name: wishName.trim(), message: wishMessage.trim() });
+      if (error) { setWishError("Your wish could not be submitted. Please try again."); return; }
+    } else {
+      const saved = JSON.parse(localStorage.getItem("rk-demo-wishes") || "[]");
+      saved.unshift({ id: Date.now(), guest_name: wishName.trim(), message: wishMessage.trim(), approved: true, created_at: new Date().toISOString() });
+      localStorage.setItem("rk-demo-wishes", JSON.stringify(saved)); setWishes(saved);
+    }
+    if (supabase) { const { data } = await supabase.from("wishes").select("*").eq("approved", true).order("created_at", { ascending: false }); setWishes(data || []); }
+    setWishSent(true); setWishName(""); setWishMessage("");
+  }
+
+  async function approveWish(id: number) {
+    if (!supabase) return;
+    const { error } = await supabase.from("wishes").update({ approved: true }).eq("id", id);
+    if (!error) setWishes(current => current.map(w => w.id === id ? { ...w, approved: true } : w));
   }
 
   async function signIn(e: React.FormEvent) {
@@ -164,6 +193,10 @@ function App() {
         <div className="dashboard-heading"><div><p className="eyebrow">ROI & KATHLYN · FEBRUARY 26, 2027</p><h1>Website editor</h1><p className="muted">Changes are saved to your live invitation.</p></div><button className="outline-btn" onClick={signOut}><LogOut size={16}/> Sign out</button></div>
         <div className="editor-grid">
           <section className="editor-panel">
+            <h2><Settings size={18}/> Choose your template</h2>
+            <p className="muted">Switch the design anytime. Your invitation text, photos, and RSVP data stay the same.</p>
+            <div className="template-choices">{([ ["botanical","Botanical romance","Soft blue florals · airy and elegant"], ["classic","Classic elegance","Warm ivory · timeless typography"], ["editorial","Modern editorial","Minimal layout · refined details"] ] as const).map(([id,name,desc]) => <button type="button" key={id} className={`template-choice ${content.template === id ? "selected" : ""}`} onClick={() => update("template", id)}><span className={`template-swatch ${id}`}>R <i>&</i> K</span><strong>{name}</strong><small>{desc}</small></button>)}</div>
+            <div className="live-preview"><div className={`preview-paper ${content.template}`}><small>YOU ARE INVITED</small><strong>Roi <i>&</i> Kath</strong><span>FEBRUARY 26, 2027</span><p>{content.welcome}</p></div><span className="preview-caption">LIVE PREVIEW · updates as you edit</span></div>
             <h2><Settings size={18}/> Invitation content</h2>
             <label>Welcome message<textarea value={content.welcome} onChange={e => update("welcome", e.target.value)} rows={3}/></label>
             <label>Our love story<textarea value={content.story} onChange={e => update("story", e.target.value)} rows={4}/></label>
@@ -191,13 +224,14 @@ function App() {
             <div className="stats"><div><strong>{rsvps.length}</strong><span>Total responses</span></div><div><strong>{rsvps.filter(r => r.attending === true || r.attending === "yes").length}</strong><span>Attending</span></div><div><strong>{rsvps.filter(r => r.attending === false || r.attending === "no").length}</strong><span>Declined</span></div></div>
             {!hasSupabase && <p className="small-note">Local demo responses only appear in this browser. Connect Supabase for shared guest responses.</p>}
             <div className="response-list">{rsvps.length ? rsvps.map((r, i) => <article key={r.id || i}><strong>{r.full_name}</strong><span>{r.attending === true || r.attending === "yes" ? "Attending" : "Declined"} · {r.guest_count} guest(s)</span><small>{r.message}</small></article>) : <p className="muted">No RSVP responses yet.</p>}</div>
+            <h2>Guestbook moderation</h2><p className="muted">Approve guest wishes before they appear publicly.</p><div className="response-list">{wishes.length ? wishes.map(w => <article key={w.id}><strong>{w.guest_name}</strong><small>{w.message}</small><span>{w.approved ? "Published" : "Waiting for approval"}</span>{!w.approved && <button className="outline-btn" onClick={() => approveWish(w.id)}>Approve wish</button>}</article>) : <p className="muted">No guest wishes yet.</p>}</div>
           </section>
         </div>
       </div>}
     </main>;
   }
 
-  return <div className="site" style={{ "--accent": content.accent } as React.CSSProperties}>
+  return <div className={`site template-${content.template}`} style={{ "--accent": content.accent } as React.CSSProperties}>
     {!opened && <div className="intro-screen">
       <div className="intro-glow"></div><div className="intro-copy"><p className="eyebrow">A CELEBRATION OF LOVE</p><h1>Roi <i>&</i> Kathlyn</h1><p>FEBRUARY 26, 2027</p></div>
       <button className="envelope-button" onClick={() => setOpened(true)} aria-label="Open wedding invitation">
@@ -207,7 +241,7 @@ function App() {
       <div className="intro-bottom">WITH LOVE, ROI & KATHLYN</div>
     </div>}
     {opened && <>
-      <header className="site-header"><button className="brand" onClick={() => window.scrollTo({top:0,behavior:"smooth"})}>R <i>&</i> K</button><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X/> : <Menu/>}</button><nav className={menuOpen ? "nav open" : "nav"}>{[["Our Story","#story"],["The Day","#details"],["Gallery","#gallery"],["Entourage","#entourage"],["RSVP","#rsvp"]].map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}</nav></header>
+      <header className="site-header"><button className="brand" onClick={() => window.scrollTo({top:0,behavior:"smooth"})}>R <i>&</i> K</button><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X/> : <Menu/>}</button><nav className={menuOpen ? "nav open" : "nav"}>{[["Our Story","#story"],["The Day","#details"],["Gallery","#gallery"],["Entourage","#entourage"],["Guestbook","#guestbook"],["RSVP","#rsvp"]].map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}</nav></header>
       <section className="hero">
         <div className="hero-flower flower-one">✿</div><div className="hero-flower flower-two">❀</div>
         <p className="eyebrow">TOGETHER WITH OUR FAMILIES</p><h1>Roi <i>&</i><br/>Kathlyn</h1><div className="thin-line"></div><p className="hero-date">FRIDAY · FEBRUARY 26 · 2027</p><p className="hero-message">{content.welcome}</p><a className="scroll-link" href="#details">DISCOVER OUR DAY <ChevronDown size={15}/></a>
@@ -216,8 +250,10 @@ function App() {
       <section className="story-section section" id="story"><div className="section-kicker">A LITTLE ABOUT US</div><h2>Our love story</h2><div className="ornament">✧　❀　✧</div><p className="story-text">{content.story}</p><p className="signature">With love, Roi & Kathlyn</p></section>
       <section className="details-section section" id="details"><div className="section-kicker">SAVE THE DATE</div><h2>The wedding day</h2><div className="details-grid"><article className="detail-card"><CalendarDays/><p className="eyebrow">THE CEREMONY</p><h3>{content.ceremonyName}</h3><p>{content.ceremonyTime}</p><p className="address"><MapPin size={15}/>{content.ceremonyAddress}</p><a href={mapUrl(content.ceremonyAddress)} target="_blank" rel="noreferrer">GET DIRECTIONS <ExternalLink size={13}/></a></article><article className="detail-card"><Heart/><p className="eyebrow">THE RECEPTION</p><h3>{content.receptionName}</h3><p>{content.receptionTime}</p><p className="address"><MapPin size={15}/>{content.receptionAddress}</p><a href={mapUrl(content.receptionAddress)} target="_blank" rel="noreferrer">GET DIRECTIONS <ExternalLink size={13}/></a></article></div></section>
       <section className="gallery-section section" id="gallery"><div className="section-kicker">MOMENTS TO TREASURE</div><h2>Our memories</h2><p className="muted">A few snapshots from our journey together.</p><div className="gallery-grid">{content.gallery.length ? content.gallery.map((src,i) => <img src={src} key={src+i} alt={`Roi and Kathlyn memory ${i+1}`}/>) : <div className="gallery-placeholder"><Heart/><span>Your favorite photos will appear here.</span><small>Upload photos in your admin dashboard.</small></div>}</div></section>
+      <section className="schedule-note section"><div className="section-kicker">A DAY TO REMEMBER</div><h2>Our celebration</h2><p>{content.scheduleNote}</p></section>
       <section className="entourage-section section" id="entourage"><div className="section-kicker">SURROUNDED BY LOVE</div><h2>Our entourage</h2><p className="entourage-copy">{content.entourage}</p></section>
       <section className="dress-section section"><div className="section-kicker">A NOTE ON ATTIRE</div><h2>Dress code</h2><div className="swatches"><i style={{background:"#c5dce4"}}/><i style={{background:"#e6eff0"}}/><i style={{background:"#e4d6c3"}}/><i style={{background:"#faf8f2"}}/><i style={{background:"#c9b17a"}}/></div><p>{content.dressCode}</p></section>
+      <section className="guestbook-section section" id="guestbook"><div className="section-kicker">KIND WORDS</div><h2>Leave us a wish</h2><p>Share a message for the couple as we begin this new chapter.</p>{wishSent ? <p className="success wish-success">Thank you for your lovely wish! {hasSupabase ? "It will appear after approval." : ""}</p> : <form className="rsvp-form" onSubmit={submitWish}><label>Your name<input value={wishName} onChange={e => setWishName(e.target.value)} required placeholder="Your name"/></label><label>Your message<textarea rows={3} value={wishMessage} onChange={e => setWishMessage(e.target.value)} required placeholder="Write a little note for Roi & Kath…"/></label>{wishError && <p className="error">{wishError}</p>}<button className="primary-btn">Post your wish <Heart size={16}/></button></form>}<div className="wish-list">{wishes.filter(w => w.approved).map(w => <article key={w.id}><span>“</span><p>{w.message}</p><small>— {w.guest_name}</small></article>)}</div></section>
       <section className="rsvp-section section" id="rsvp"><div className="section-kicker">KINDLY REPLY</div><h2>Will you join us?</h2><p>We would be honored to celebrate this special day with you.</p>
         {rsvpSent ? <div className="rsvp-success"><CheckCircle2/><h3>Thank you!</h3><p>Your response has been received. We can't wait to celebrate with you.</p></div> : <form className="rsvp-form" onSubmit={submitRsvp}>
           <label>Full name *<input required value={guest.full_name} onChange={e => setGuest({...guest,full_name:e.target.value})} placeholder="Your full name"/></label>

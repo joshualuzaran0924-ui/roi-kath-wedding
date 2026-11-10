@@ -20,6 +20,8 @@ export type WeddingContent = {
   gallery: string[];
   musicUrl: string;
   accent: string;
+  template: "classic" | "botanical" | "editorial";
+  scheduleNote: string;
 };
 
 export const defaultContent: WeddingContent = {
@@ -35,7 +37,9 @@ export const defaultContent: WeddingContent = {
   entourage: "Wedding entourage details will be announced soon.",
   gallery: [],
   musicUrl: "",
-  accent: "#9bbfca"
+  accent: "#9bbfca",
+  template: "botanical",
+  scheduleNote: "Ceremony, photos, dinner, and dancing — more details to follow."
 };
 
 export async function loadContent(): Promise<WeddingContent> {
