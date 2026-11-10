@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase, hasSupabase, loadContent, saveContent, defaultContent, WeddingContent } from "./lib";
+import { supabase, hasSupabase, loadContent, saveContent, defaultContent } from "./lib";
+import type { WeddingContent } from "./lib";
 import { Heart, MapPin, CalendarDays, Music2, VolumeX, Volume2, LockKeyhole, ImagePlus, Save, LogOut, Settings, ChevronDown, ExternalLink, CheckCircle2, Menu, X } from "lucide-react";
 
 const weddingDate = new Date("2027-02-26T16:00:00+08:00");
